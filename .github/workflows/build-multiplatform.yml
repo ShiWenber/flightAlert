@@ -73,17 +73,14 @@ jobs:
    
     - name: Copy config file to dist
       run: ${{ matrix.copy-cmd }}
-      
-    - name: Create platform-specific archive
-      run: |
-        ${{ runner.os == 'Windows' && 'Compress-Archive -Path "dist/${{ matrix.gui-name }}","dist/${{ matrix.console-name }}" -DestinationPath "FlightAlert-${{ matrix.platform-name }}.zip"' || 'zip -j FlightAlert-${{ matrix.platform-name }}.zip dist/${{ matrix.gui-name }} dist/${{ matrix.console-name }}' }}
     
     - name: Upload platform binaries
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.platform-name }}-binaries
         path: |
-          FlightAlert-${{ matrix.platform-name }}.zip
+            dist/${{ matrix.gui-name }}
+            dist/${{ matrix.console-name }}
     
     - name: Upload shared files
       if: matrix.os == 'ubuntu-latest'
@@ -138,8 +135,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            artifacts/windows-binaries/FlightAlert-windows.zip
-            artifacts/linux-binaries/FlightAlert-linux.zip
+            artifacts/windows-binaries/*
             artifacts/shared-files/config.json
             README.txt
           draft: false
@@ -149,16 +145,11 @@ jobs:
             
             适用于 Windows 和 Linux 平台的航班价格监控工具，支持图形界面和命令行两种版本。
             
-            ## 下载
-            - **Windows 用户**: 下载 FlightAlert-windows.zip
-            - **Linux 用户**: 下载 FlightAlert-linux.zip
-            
             ## 特性
             - 自动监控航班价格变化
             - 价格下降自动推送通知
             - 支持多平台（Windows/Linux）
             - 提供图形界面与命令行版本
             
-            详细使用说明请参考各压缩包中的文件。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -19,6 +19,7 @@ jobs:
             gui-name: FlightAlert.exe
             console-name: FlightAlert-Console.exe
             data-separator: ";"
+            platform-name: windows
             test-cmd: |
               if ((Test-Path "dist/FlightAlert.exe") -and (Test-Path "dist/FlightAlert-Console.exe")) {
                 Write-Host "✓ Executables built successfully"
@@ -32,6 +33,7 @@ jobs:
             gui-name: FlightAlert
             console-name: FlightAlert-Console
             data-separator: ":"
+            platform-name: linux
             test-cmd: |
               if [ -f "dist/FlightAlert" ] && [ -f "dist/FlightAlert-Console" ]; then
                 echo "✓ Executables built successfully"
@@ -54,10 +56,11 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y python3-tk python3-dev libgtk-3-dev
-    
     - name: Install Python dependencies
       run: |
-        pip install -r requirements.txt
+        python -m pip install --upgrade pip
+        # Remove tkinter from requirements.txt file if it exists
+        pip install -r <(grep -v "tkinter==" requirements.txt || cat requirements.txt)
         pip install pyinstaller
     
     - name: Build GUI Application with PyInstaller
@@ -67,39 +70,97 @@ jobs:
     - name: Build Console Application with PyInstaller  
       run: |
         pyinstaller --name "${{ matrix.console-name }}" flight_alert.py --console --add-data "config.json${{ matrix.data-separator }}." --clean ${{ runner.os == 'Linux' && '--argv-emulation' || '' }}
-    
     - name: Test builds
       run: ${{ matrix.test-cmd }}
    
     - name: Copy config file to dist
       run: ${{ matrix.copy-cmd }}
+      
+    - name: Create platform-specific archive
+      run: |
+        ${{ runner.os == 'Windows' && 'Compress-Archive -Path "dist/${{ matrix.gui-name }}","dist/${{ matrix.console-name }}" -DestinationPath "FlightAlert-${{ matrix.platform-name }}.zip"' || 'zip -j FlightAlert-${{ matrix.platform-name }}.zip dist/${{ matrix.gui-name }} dist/${{ matrix.console-name }}' }}
     
-    - name: Upload artifacts
+    - name: Upload platform binaries
       uses: actions/upload-artifact@v4
       with:
-        name: binaries
+        name: ${{ matrix.platform-name }}-binaries
         path: |
-          dist/${{ matrix.gui-name }}
-          dist/${{ matrix.console-name }}
-          dist/config.json
+          FlightAlert-${{ matrix.platform-name }}.zip
     
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+    - name: Upload shared files
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/upload-artifact@v4
       with:
-        files: |
-          dist/${{ matrix.gui-name }}
-          dist/${{ matrix.console-name }}
+        name: shared-files
+        path: |
           dist/config.json
+          
+  release:
+    name: Create unified release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+      
+      - name: Create README for release
+        run: |
+          cat > README.txt << 'EOF'
+          # FlightAlert 航班价格监控工具
 
-        draft: false
-        prerelease: false
-        body: |
-            ## windows
-            - `FlightAlert.exe` - GUI application
-            - `FlightAlert-Console.exe` - Console application
-            ## linux
-            - `FlightAlert` - GUI application
-            - `FlightAlert-Console` - Console application
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ## 文件说明
+          - FlightAlert.exe / FlightAlert: 图形界面版本（推荐使用）
+          - FlightAlert-Console.exe / FlightAlert-Console: 命令行版本
+          - config.json: 配置文件示例
+
+          ## 使用方法
+          ### Windows:
+          1. 双击运行 FlightAlert.exe
+          2. 在"配置设置"页面设置监控参数
+          3. 点击"保存配置"保存设置
+          4. 在"价格监控"页面点击"开始监控"
+
+          ### Linux:
+          1. 赋予可执行权限: chmod +x FlightAlert
+          2. 运行程序: ./FlightAlert
+          3. 在"配置设置"页面设置监控参数
+          4. 点击"保存配置"保存设置
+          5. 在"价格监控"页面点击"开始监控"
+
+          注意：需要配置 PushPlus 推送令牌才能接收微信通知
+          EOF
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/windows-binaries/FlightAlert-windows.zip
+            artifacts/linux-binaries/FlightAlert-linux.zip
+            artifacts/shared-files/config.json
+            README.txt
+          draft: false
+          prerelease: false
+          body: |
+            # FlightAlert 航班价格监控工具 v${{ github.ref_name }}
+            
+            适用于 Windows 和 Linux 平台的航班价格监控工具，支持图形界面和命令行两种版本。
+            
+            ## 下载
+            - **Windows 用户**: 下载 FlightAlert-windows.zip
+            - **Linux 用户**: 下载 FlightAlert-linux.zip
+            
+            ## 特性
+            - 自动监控航班价格变化
+            - 价格下降自动推送通知
+            - 支持多平台（Windows/Linux）
+            - 提供图形界面与命令行版本
+            
+            详细使用说明请参考各压缩包中的文件。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

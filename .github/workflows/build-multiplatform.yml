@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
+        os: [windows-latest, ubuntu-latest]
         python-version: ['3.8']
         include:
           - os: windows-latest
@@ -83,7 +83,7 @@ jobs:
             dist/${{ matrix.console-name }}
     
     - name: Upload shared files
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
         name: shared-files

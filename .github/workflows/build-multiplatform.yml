@@ -23,7 +23,7 @@ jobs:
             archive-cmd: |
               Compress-Archive -Path dist/FlightAlert.exe, dist/FlightAlert-Console.exe, dist/config.json, dist/README.txt -DestinationPath dist/FlightAlert-Windows.zip
             test-cmd: |
-              if (Test-Path "dist/FlightAlert.exe" -and Test-Path "dist/FlightAlert-Console.exe") {
+              if ((Test-Path "dist/FlightAlert.exe") -and (Test-Path "dist/FlightAlert-Console.exe")) {
                 Write-Host "✓ Executables built successfully"
               } else {
                 Write-Error "✗ One or more executables not found"
@@ -64,10 +64,6 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        
-        # Fix tkinker typo in requirements.txt - works on both Windows and Linux
-        ${{ runner.os == 'Windows' && 'python -c "content = open(\"requirements.txt\", \"r\").read().replace(\"tkinker==1.1.1\", \"\"); open(\"requirements.txt\", \"w\").write(content)"' || 'sed -i \"s/tkinker==1.1.1//g\" requirements.txt' }}
-        
         pip install -r requirements.txt
         pip install pyinstaller
     

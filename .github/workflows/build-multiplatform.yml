@@ -1,0 +1,158 @@
+name: Build and Release Flight Alert Multi-Platform
+
+on:
+  push:
+    tags:
+      - 'v*' # Run when tag is pushed starting with 'v'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python-version: ['3.11']
+        include:
+          - os: windows-latest
+            gui-name: FlightAlert.exe
+            console-name: FlightAlert-Console.exe
+            data-separator: ";"
+            archive-name: FlightAlert-Windows.zip
+            archive-cmd: |
+              Compress-Archive -Path dist/FlightAlert.exe, dist/FlightAlert-Console.exe, dist/config.json, dist/README.txt -DestinationPath dist/FlightAlert-Windows.zip
+            test-cmd: |
+              if (Test-Path "dist/FlightAlert.exe" -and Test-Path "dist/FlightAlert-Console.exe") {
+                Write-Host "✓ Executables built successfully"
+              } else {
+                Write-Error "✗ One or more executables not found"
+                exit 1
+              }
+            copy-cmd: Copy-Item "config.json" "dist/"
+            
+          - os: ubuntu-latest
+            gui-name: FlightAlert
+            console-name: FlightAlert-Console
+            data-separator: ":"
+            archive-name: FlightAlert-Linux.tar.gz
+            archive-cmd: |
+              cd dist && tar -czvf FlightAlert-Linux.tar.gz FlightAlert FlightAlert-Console config.json README.txt && cd ..
+            test-cmd: |
+              if [ -f "dist/FlightAlert" ] && [ -f "dist/FlightAlert-Console" ]; then
+                echo "✓ Executables built successfully"
+              else
+                echo "✗ One or more executables not found"
+                exit 1
+              fi
+            copy-cmd: cp "config.json" "dist/"
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk python3-dev libgtk-3-dev
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        
+        # Fix tkinker typo in requirements.txt - works on both Windows and Linux
+        ${{ runner.os == 'Windows' && 'python -c "content = open(\"requirements.txt\", \"r\").read().replace(\"tkinker==1.1.1\", \"\"); open(\"requirements.txt\", \"w\").write(content)"' || 'sed -i \"s/tkinker==1.1.1//g\" requirements.txt' }}
+        
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: Build GUI Application with PyInstaller
+      run: |
+        pyinstaller --name "${{ matrix.gui-name }}" flight_alert_gui.py --windowed --add-data "config.json${{ matrix.data-separator }}." --clean ${{ runner.os == 'Linux' && '--argv-emulation' || '' }}
+    
+    - name: Build Console Application with PyInstaller  
+      run: |
+        pyinstaller --name "${{ matrix.console-name }}" flight_alert.py --console --add-data "config.json${{ matrix.data-separator }}." --clean ${{ runner.os == 'Linux' && '--argv-emulation' || '' }}
+    
+    - name: Test builds
+      run: ${{ matrix.test-cmd }}
+    
+    - name: Create README for release
+      run: |
+        ${{ runner.os == 'Windows' && 'echo "# 航班价格监控工具 - 可执行文件" | Out-File -Encoding utf8 dist/README.txt' || 'echo "# 航班价格监控工具 - 可执行文件" > dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "" >> dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "## 文件说明" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "## 文件说明" >> dist/README.txt' }}
+        
+        # OS-specific instructions
+        ${{ runner.os == 'Windows' && 'echo "- FlightAlert.exe: 图形界面版本（推荐使用）" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "- FlightAlert: 图形界面版本（推荐使用）" >> dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "- FlightAlert-Console.exe: 命令行版本" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "- FlightAlert-Console: 命令行版本" >> dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "- config.json: 配置文件示例" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "- config.json: 配置文件示例" >> dist/README.txt' }}
+        
+        # Different usage instructions
+        ${{ runner.os == 'Windows' && 'echo "" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "" >> dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "## 使用方法" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "## 使用方法" >> dist/README.txt' }}
+        
+        # Windows instructions
+        ${{ runner.os == 'Windows' && 'echo "1. 双击运行 FlightAlert.exe" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "1. 赋予可执行权限: chmod +x FlightAlert" >> dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "2. 在''配置设置''页面设置监控参数" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "2. 运行程序: ./FlightAlert" >> dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "3. 点击''保存配置''保存设置" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "3. 在''配置设置''页面设置监控参数" >> dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "4. 在''价格监控''页面点击''开始监控''" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "4. 点击''保存配置''保存设置" >> dist/README.txt' }}
+        ${{ runner.os == 'Linux' && 'echo "5. 在''价格监控''页面点击''开始监控''" >> dist/README.txt' || '' }}
+        
+        # Common note
+        ${{ runner.os == 'Windows' && 'echo "" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "" >> dist/README.txt' }}
+        ${{ runner.os == 'Windows' && 'echo "注意：需要配置 PushPlus 推送令牌才能接收微信通知" | Out-File -Encoding utf8 -Append dist/README.txt' || 'echo "注意：需要配置 PushPlus 推送令牌才能接收微信通知" >> dist/README.txt' }}
+    
+    - name: Copy config file to dist
+      run: ${{ matrix.copy-cmd }}
+    
+    - name: Create archive for release
+      run: ${{ matrix.archive-cmd }}
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ runner.os }}-binaries
+        path: |
+          dist/${{ matrix.gui-name }}
+          dist/${{ matrix.console-name }}
+          dist/config.json
+          dist/README.txt
+          dist/${{ matrix.archive-name }}
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/${{ matrix.archive-name }}
+        draft: false
+        prerelease: false
+        body: |
+          ## 航班价格监控工具 - ${{ runner.os }} 发布版本
+          
+          ### 下载说明
+          - **${{ matrix.archive-name }}**: ${{ runner.os }} 版本压缩包（包含图形界面和命令行版本）
+          
+          ### ${{ runner.os == 'Windows' && '使用方法' || '安装步骤' }}
+          ${{ runner.os == 'Windows' && '1. 解压下载的文件
+          2. 双击运行 FlightAlert.exe
+          3. 在"配置设置"标签页中输入监控参数
+          4. 点击"保存配置"保存设置
+          5. 切换到"价格监控"标签页，点击"开始监控"开始监控价格' || '1. 下载 `FlightAlert-Linux.tar.gz` 文件
+          2. 解压文件: `tar -xzvf FlightAlert-Linux.tar.gz`
+          3. 赋予可执行权限: `chmod +x FlightAlert FlightAlert-Console`
+          4. 运行图形界面版本: `./FlightAlert`
+          5. 或运行命令行版本: `./FlightAlert-Console`' }}
+          
+          ### 注意事项
+          - 需要配置 PushPlus 推送令牌才能接收微信通知
+          - 建议设置合理的检查间隔，避免频繁请求
+          ${{ runner.os == 'Linux' && '- 如果遇到图形界面问题，请确保已安装 tkinter: `sudo apt-get install python3-tk`' || '' }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

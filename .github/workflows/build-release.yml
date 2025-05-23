@@ -1,0 +1,115 @@
+name: Build and Release Flight Alert
+
+on:
+  push:
+    tags:
+      - 'v*' # Run when tag is pushed starting with 'v'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+        python-version: ['3.11']
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: Build GUI Application with PyInstaller
+      run: |
+        pyinstaller flight_alert_gui.spec
+    
+    - name: Build Console Application with PyInstaller  
+      run: |
+        pyinstaller flight_alert_console.spec
+    
+    - name: Test GUI build
+      run: |
+        if (Test-Path "dist/FlightAlert.exe") {
+          Write-Host "✓ GUI executable built successfully"
+        } else {
+          Write-Error "✗ GUI executable not found"
+          exit 1
+        }
+    
+    - name: Test Console build
+      run: |
+        if (Test-Path "dist/FlightAlert-Console.exe") {
+          Write-Host "✓ Console executable built successfully"
+        } else {
+          Write-Error "✗ Console executable not found"
+          exit 1
+        }
+    
+    - name: Create README for release
+      run: |
+        echo "# 航班价格监控工具 - 可执行文件" > dist/README.txt
+        echo "" >> dist/README.txt
+        echo "## 文件说明" >> dist/README.txt
+        echo "- FlightAlert.exe: 图形界面版本（推荐使用）" >> dist/README.txt
+        echo "- FlightAlert-Console.exe: 命令行版本" >> dist/README.txt
+        echo "- config.json: 配置文件示例" >> dist/README.txt
+        echo "" >> dist/README.txt
+        echo "## 使用方法" >> dist/README.txt
+        echo "1. 双击运行 FlightAlert.exe" >> dist/README.txt
+        echo "2. 在'配置设置'页面设置监控参数" >> dist/README.txt
+        echo "3. 点击'保存配置'保存设置" >> dist/README.txt
+        echo "4. 在'价格监控'页面点击'开始监控'" >> dist/README.txt
+        echo "" >> dist/README.txt
+        echo "注意：需要配置 PushPlus 推送令牌才能接收微信通知" >> dist/README.txt
+    
+    - name: Copy config file to dist
+      run: |
+        Copy-Item "config.json" "dist/"
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.os }}-binaries
+        path: |
+          dist/FlightAlert.exe
+          dist/FlightAlert-Console.exe
+          dist/config.json
+          dist/README.txt
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/FlightAlert.exe
+          dist/FlightAlert-Console.exe
+          dist/config.json
+        draft: false
+        prerelease: false
+        body: |
+          ## 航班价格监控工具 - 发布版本
+          
+          ### 下载说明
+          - **FlightAlert.exe**: 图形界面版本（推荐）
+          - **FlightAlert-Console.exe**: 命令行版本
+          - **config.json**: 配置文件示例
+          
+          ### 使用方法
+          1. 下载 `FlightAlert.exe` 文件
+          2. 双击运行程序
+          3. 在"配置设置"标签页中输入监控参数
+          4. 点击"保存配置"保存设置
+          5. 切换到"价格监控"标签页，点击"开始监控"开始监控价格
+          
+          ### 注意事项
+          - 需要配置 PushPlus 推送令牌才能接收微信通知
+          - 建议设置合理的检查间隔，避免频繁请求
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
